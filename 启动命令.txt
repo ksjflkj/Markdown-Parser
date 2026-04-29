@@ -1,0 +1,7 @@
+npx -y serve .
+
+双击一键启动.bat 可自动启动服务并打开浏览器。
+
+更新：
+
+npm run build

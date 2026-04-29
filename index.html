@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown 解析器 - 实时预览</title>
+  <meta name="description" content="一个现代化的 Markdown 在线解析器，支持实时预览、语法高亮和多种导出方式。">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- Marked.js for Markdown parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  
+  <!-- highlight.js for syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  
+  <!-- DOMPurify for XSS protection -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+  
+  <!-- Mermaid.js for diagrams -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <header class="navbar" id="navbar">
+    <div class="navbar-left">
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="20" height="20" rx="4" stroke="url(#logoGrad)" stroke-width="2"/>
+          <path d="M7 15V9L9.5 12L12 9V15" stroke="url(#logoGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M15 15V9L17 12" stroke="url(#logoGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="logoGrad" x1="2" y1="2" x2="22" y2="22">
+              <stop stop-color="#6C63FF"/>
+              <stop offset="1" stop-color="#FF6584"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="logo-text">MD Parser</span>
+      </div>
+    </div>
+    <div class="navbar-center">
+      <div class="view-toggle" id="viewToggle">
+        <button class="view-btn active" data-view="split" id="btnSplit" title="分屏视图">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="6" height="12" rx="1" opacity="0.9"/><rect x="9" y="2" width="6" height="12" rx="1" opacity="0.5"/></svg>
+          <span>分屏</span>
+        </button>
+        <button class="view-btn" data-view="editor" id="btnEditor" title="编辑器视图">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="12" rx="1" opacity="0.9"/></svg>
+          <span>编辑</span>
+        </button>
+        <button class="view-btn" data-view="preview" id="btnPreview" title="预览视图">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="12" rx="1" opacity="0.5"/></svg>
+          <span>预览</span>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-right">
+      <button class="action-btn" id="btnSearch" title="搜索 (Ctrl+F)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+        <span>搜索</span>
+      </button>
+      <button class="action-btn" id="btnCopyHtml" title="复制 HTML">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="8" height="8" rx="1"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
+        <span>复制 HTML</span>
+      </button>
+      <button class="action-btn" id="btnOpen" title="打开文件">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 4.5V14a2 2 0 01-2 2H4a2 2 0 01-2-2V2a2 2 0 012-2h5.5L14 4.5zM10 4a1 1 0 001 1h2.5L10 1.5V4zM2 7h12M2 10h12"/></svg>
+        <span>打开</span>
+      </button>
+      <button class="action-btn" id="btnSave" title="保存文件 (Ctrl+S)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 14V4.5L9.5 0H4a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2zM14 14H2M7 10h2M7 14h2M10 4V2H4v2"/></svg>
+        <span>保存</span>
+      </button>
+      <button class="action-btn" id="btnExport" title="导出文件">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 12v1a1 1 0 001 1h8a1 1 0 001-1v-1"/></svg>
+        <span>导出</span>
+      </button>
+      <button class="action-btn icon-only" id="btnTheme" title="切换主题" aria-label="切换主题">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="themeIcon">
+          <circle cx="12" cy="12" r="5"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </button>
+      <button class="action-btn icon-only" id="btnCustomTheme" title="自定义配色" aria-label="自定义配色">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="8" cy="10" r="1.5" fill="currentColor" stroke="none"/>
+          <circle cx="12" cy="7" r="1.5" fill="currentColor" stroke="none"/>
+          <circle cx="16" cy="10" r="1.5" fill="currentColor" stroke="none"/>
+          <path d="M12 18c2 0 4-1 4-3s-2-2-4-2-4 0-4 2 2 3 4 3z" fill="currentColor" stroke="none" opacity="0.5"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Search Bar -->
+  <div class="search-bar" id="searchBar">
+    <div class="search-bar-inner">
+      <svg class="search-bar-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+      <input type="text" id="searchInput" class="search-input" placeholder="搜索内容..." autocomplete="off" spellcheck="false">
+      <span class="search-count" id="searchCount"></span>
+      <div class="search-nav">
+        <button class="search-nav-btn" id="searchPrev" title="上一个 (Shift+Enter)">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10l4-4 4 4"/></svg>
+        </button>
+        <button class="search-nav-btn" id="searchNext" title="下一个 (Enter)">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>
+        </button>
+      </div>
+      <button class="search-close-btn" id="searchClose" type="button" title="关闭 (Esc)" aria-label="关闭搜索">&times;</button>
+    </div>
+  </div>
+
+  <!-- Main Content Area -->
+  <main class="main-container" id="mainContainer">
+    <!-- TOC Panel -->
+    <section class="panel toc-panel" id="tocPanel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12M2 8h8M2 12h12"/></svg>
+          <span>目录</span>
+        </div>
+      </div>
+      <nav class="toc-nav" id="tocNav"></nav>
+    </section>
+
+    <!-- TOC Resizer -->
+    <div class="toc-resizer" id="tocResizer">
+      <div class="resizer-handle"></div>
+    </div>
+
+    <!-- Editor Panel -->
+    <section class="panel editor-panel" id="editorPanel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M14 4.5V14a2 2 0 01-2 2H4a2 2 0 01-2-2V2a2 2 0 012-2h5.5L14 4.5zM10 4a1 1 0 001 1h2.5L10 1.5V4z"/></svg>
+          <span>Markdown 编辑器</span>
+        </div>
+        <div class="panel-actions">
+          <span class="char-count" id="charCount">0 字符</span>
+          <span class="line-count" id="lineCount">0 行</span>
+        </div>
+      </div>
+      <!-- Format Toolbar -->
+      <div class="format-toolbar" id="formatToolbar">
+        <button class="format-btn" data-format="bold" title="粗体 (Ctrl+B)">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2v12h5.5a3.5 3.5 0 001.852 5.47 3.5 3.5 0 002.648.53H4V2h5l1 3.5H8.5L7 2H4z"/></svg>
+        </button>
+        <button class="format-btn" data-format="italic" title="斜体 (Ctrl+I)">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6 2v2h2.5l-3.5 8H3V12h5.5L9 4H6V2z"/></svg>
+        </button>
+        <button class="format-btn" data-format="code" title="行内代码 (Ctrl+`)">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 4L1 8l4 4M11 4l4 4-4 4M9 2l-2 12"/></svg>
+        </button>
+        <button class="format-btn" data-format="link" title="链接 (Ctrl+K)">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6.5 9.5a3.5 3.5 0 005 0l2-2a3.5 3.5 0 00-5-5L7 4M9.5 6.5a3.5 3.5 0 00-5 0l-2 2a3.5 3.5 0 005 5L9 12M11 5l1-1M13 7l1-1"/></svg>
+        </button>
+        <div class="format-separator"></div>
+        <button class="format-btn" data-format="quote" title="引用">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3 3.5V12a1 1 0 001 1h1V9.5L3 8V3.5zm7 0V12a1 1 0 001 1h1V9.5L10 8V3.5z"/></svg>
+        </button>
+        <button class="format-btn" data-format="ul" title="无序列表">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="2.5" cy="4" r="1.2"/><circle cx="2.5" cy="8" r="1.2"/><circle cx="2.5" cy="12" r="1.2"/><rect x="5" y="3" width="9" height="2"/><rect x="5" y="7" width="9" height="2"/><rect x="5" y="11" width="9" height="2"/></svg>
+        </button>
+        <button class="format-btn" data-format="ol" title="有序列表">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><text x="1" y="5.5" font-size="5" font-family="sans-serif">1.</text><text x="1" y="9.5" font-size="5" font-family="sans-serif">2.</text><text x="1" y="13.5" font-size="5" font-family="sans-serif">3.</text><rect x="5" y="3" width="9" height="2"/><rect x="5" y="7" width="9" height="2"/><rect x="5" y="11" width="9" height="2"/></svg>
+        </button>
+        <div class="format-dropdown">
+          <button class="format-btn format-dropdown-btn" data-format="task" title="任务列表">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="2" width="4" height="4" rx="1"/><path d="M3 4l2 2 3-3"/><rect x="2" y="8" width="4" height="4" rx="1"/><path d="M2.5 10h4M9 3h5M9 7h5M9 11h5"/></svg>
+          </button>
+          <div class="format-dropdown-menu format-dropdown-menu-wide">
+            <button class="format-dropdown-item" data-task="unchecked">未完成</button>
+            <button class="format-dropdown-item" data-task="checked">已完成</button>
+            <button class="format-dropdown-item" data-task="remove">取消任务列表</button>
+          </div>
+        </div>
+        <div class="format-separator"></div>
+        <div class="format-dropdown">
+          <button class="format-btn format-dropdown-btn" data-format="heading" title="标题">
+            <span>H</span>
+          </button>
+          <div class="format-dropdown-menu">
+            <button class="format-dropdown-item" data-heading="1">H1</button>
+            <button class="format-dropdown-item" data-heading="2">H2</button>
+            <button class="format-dropdown-item" data-heading="3">H3</button>
+            <button class="format-dropdown-item" data-heading="4">H4</button>
+          </div>
+        </div>
+        <button class="format-btn" data-format="codeblock" title="代码块">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1" y="2" width="14" height="12" rx="2"/><path d="M5 6l-2 2 2 2M11 6l2 2-2 2M9 5l-2 6"/></svg>
+        </button>
+        <button class="format-btn" data-format="hr" title="分隔线">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 8h14M1 4h14"/></svg>
+        </button>
+      </div>
+      <div class="editor-wrapper">
+        <textarea id="editor" spellcheck="false" placeholder="在此输入 Markdown 内容...&#10;&#10;支持标准 Markdown 语法：&#10;# 标题&#10;**粗体** *斜体*&#10;- 列表&#10;> 引用&#10;```代码块```&#10;[链接](url)&#10;![图片](url)"></textarea>
+      </div>
+    </section>
+
+    <!-- Resizer -->
+    <div class="resizer" id="resizer">
+      <div class="resizer-handle"></div>
+    </div>
+
+    <!-- Preview Panel -->
+    <section class="panel preview-panel" id="previewPanel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8z"/><path d="M6.5 7.5A.75.75 0 017 6.75h1a.75.75 0 01.75.75v3.25h.25a.75.75 0 010 1.5h-2a.75.75 0 010-1.5h.25V8.25H7A.75.75 0 016.5 7.5zM8 5a1 1 0 110-2 1 1 0 010 2z"/></svg>
+          <span>实时预览</span>
+        </div>
+        <div class="panel-actions">
+          <div class="sync-indicator" id="syncIndicator">
+            <div class="sync-dot"></div>
+            <span>已同步</span>
+          </div>
+        </div>
+      </div>
+      <div class="preview-wrapper">
+        <article class="markdown-body" id="preview"></article>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm1 10H7v-2h2v2zm0-3H7V4h2v4z"/></svg>
+    <span id="toastMessage">操作成功</span>
+  </div>
+
+  <!-- Export Modal -->
+  <div class="modal-overlay" id="exportModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>导出文件</h3>
+        <button class="modal-close" id="modalClose" type="button" aria-label="关闭导出弹窗">&times;</button>
+      </div>
+      <div class="modal-body">
+        <button class="export-option" id="exportHtml" type="button">
+          <div class="export-icon html-icon">HTML</div>
+          <div class="export-info">
+            <span class="export-title">HTML 文件</span>
+            <span class="export-desc">导出为完整的 HTML 文件，含样式</span>
+          </div>
+        </button>
+        <button class="export-option" id="exportMd" type="button">
+          <div class="export-icon md-icon">MD</div>
+          <div class="export-info">
+            <span class="export-title">Markdown 文件</span>
+            <span class="export-desc">下载原始 Markdown 文件</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drop Zone Overlay -->
+  <div class="drop-zone" id="dropZone">
+    <div class="drop-zone-content">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      <p>拖放 Markdown 文件到此处</p>
+    </div>
+  </div>
+
+  <!-- Custom Theme Modal -->
+  <div class="modal-overlay" id="customThemeModal">
+    <div class="modal theme-modal">
+      <div class="modal-header">
+        <h3>🎨 自定义配色主题</h3>
+        <button class="modal-close" id="themeModalClose" type="button" aria-label="关闭配色弹窗">&times;</button>
+      </div>
+      <div class="modal-body theme-modal-body">
+
+        <!-- Preset schemes -->
+        <div class="theme-section">
+          <div class="theme-section-label">预设配色方案</div>
+          <div class="theme-presets" id="themePresets">
+            <button class="theme-preset-card" data-scheme="default" id="preset-default">
+              <div class="theme-preset-swatch">
+                <span style="background:#6c63ff"></span>
+                <span style="background:#ff6584"></span>
+              </div>
+              <span class="theme-preset-name">默认紫</span>
+            </button>
+            <button class="theme-preset-card" data-scheme="aurora" id="preset-aurora">
+              <div class="theme-preset-swatch">
+                <span style="background:#00d4ff"></span>
+                <span style="background:#7b2fff"></span>
+              </div>
+              <span class="theme-preset-name">极光蓝</span>
+            </button>
+            <button class="theme-preset-card" data-scheme="coral" id="preset-coral">
+              <div class="theme-preset-swatch">
+                <span style="background:#ff6b6b"></span>
+                <span style="background:#ffa94d"></span>
+              </div>
+              <span class="theme-preset-name">珊瑚橙</span>
+            </button>
+            <button class="theme-preset-card" data-scheme="ocean" id="preset-ocean">
+              <div class="theme-preset-swatch">
+                <span style="background:#0ea5e9"></span>
+                <span style="background:#06b6d4"></span>
+              </div>
+              <span class="theme-preset-name">深海青</span>
+            </button>
+            <button class="theme-preset-card" data-scheme="emerald" id="preset-emerald">
+              <div class="theme-preset-swatch">
+                <span style="background:#10b981"></span>
+                <span style="background:#34d399"></span>
+              </div>
+              <span class="theme-preset-name">翡翠绿</span>
+            </button>
+            <button class="theme-preset-card" data-scheme="rose" id="preset-rose">
+              <div class="theme-preset-swatch">
+                <span style="background:#e11d48"></span>
+                <span style="background:#fb7185"></span>
+              </div>
+              <span class="theme-preset-name">玫瑰红</span>
+            </button>
+            <button class="theme-preset-card" data-scheme="gold" id="preset-gold">
+              <div class="theme-preset-swatch">
+                <span style="background:#f59e0b"></span>
+                <span style="background:#fbbf24"></span>
+              </div>
+              <span class="theme-preset-name">琥珀金</span>
+            </button>
+            <button class="theme-preset-card" data-scheme="cyber" id="preset-cyber">
+              <div class="theme-preset-swatch">
+                <span style="background:#22d3ee"></span>
+                <span style="background:#a855f7"></span>
+              </div>
+              <span class="theme-preset-name">赛博朋克</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom color pickers -->
+        <div class="theme-section">
+          <div class="theme-section-label">自定义颜色</div>
+          <div class="theme-custom-pickers">
+            <div class="theme-picker-row">
+              <label class="theme-picker-label" for="colorPrimary">主色调</label>
+              <div class="theme-picker-wrap">
+                <input type="color" id="colorPrimary" class="theme-color-input" value="#6c63ff">
+                <span class="theme-color-hex" id="hexPrimary">#6c63ff</span>
+              </div>
+            </div>
+            <div class="theme-picker-row">
+              <label class="theme-picker-label" for="colorSecondary">辅色调</label>
+              <div class="theme-picker-wrap">
+                <input type="color" id="colorSecondary" class="theme-color-input" value="#ff6584">
+                <span class="theme-color-hex" id="hexSecondary">#ff6584</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="theme-actions">
+          <button class="theme-apply-btn" id="btnApplyCustom" type="button">应用自定义颜色</button>
+          <button class="theme-reset-btn" id="btnResetTheme" type="button">重置默认</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
