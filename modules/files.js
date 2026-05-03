@@ -192,10 +192,10 @@ export function createFileController({ refs, state, editorController, getRendere
       const hasFiles = e.dataTransfer.items
         ? Array.from(e.dataTransfer.items).some(item => {
             if (item.kind !== 'file') return false;
-            // 进一步过滤：某些浏览器拖拽选中文本时也会产生 kind="file" 的 item，
-            // 但其 type 为空或 text/plain/text/html，需排除
+            // 过滤掉拖拽文字时产生的伪文件条目（type 为 text/plain 或 text/html）
+            // 注意：许多真实文件（如 .md）没有 MIME type，type 为空字符串，不应被过滤
             const type = item.type;
-            if (!type || type === 'text/plain' || type === 'text/html') return false;
+            if (type === 'text/plain' || type === 'text/html') return false;
             return true;
           })
         : (e.dataTransfer.files && e.dataTransfer.files.length > 0);
