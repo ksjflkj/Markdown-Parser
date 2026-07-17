@@ -55,6 +55,15 @@ npm run format     # 使用 Prettier 格式化代码
 
 > 提示：项目使用了 npm 依赖的裸模块导入，必须通过 `npm run dev` 或先 `npm run build` 再 `npm run preview` 运行，直接用浏览器打开 `index.html` 已不再适用。
 
+### Windows 一键脚本
+
+Windows 用户可直接双击对应的 `.bat` 脚本，首次运行会自动安装依赖：
+
+| 脚本 | 作用 | 端口 |
+|------|------|------|
+| `开发模式.bat` | 启动开发服务器（热更新，日常开发用） | http://localhost:5173 |
+| `一键启动.bat` | 构建后预览生产版本 | http://localhost:4173 |
+
 ## 项目结构
 
 ```
@@ -78,7 +87,8 @@ npm run format     # 使用 Prettier 格式化代码
 │   ├── pane-resize.js  # 面板拖拽调整
 │   └── shortcuts.js    # 快捷键
 ├── tests/              # 单元测试（Vitest）
-└── 一键启动.bat        # Windows 快捷启动
+├── 开发模式.bat        # Windows 开发模式启动（npm run dev）
+└── 一键启动.bat        # Windows 构建后预览（npm run build + preview）
 ```
 
 ## 许可证
