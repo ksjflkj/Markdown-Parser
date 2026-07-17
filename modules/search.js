@@ -32,6 +32,7 @@ export function createSearchController({ refs, state }) {
     try {
       clearHighlights();
     } catch (e) {
+      console.warn('清除搜索高亮失败:', e);
       state.searchProcessing = false;
       return;
     }

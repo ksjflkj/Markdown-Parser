@@ -1,43 +1,44 @@
-let markedRenderer = null;
-let resetHeadingIds = null;
+import { marked } from 'marked';
+import hljs from 'highlight.js';
+import DOMPurify from 'dompurify';
+
+let mermaidModule = null;
+
+async function loadMermaid() {
+  if (!mermaidModule) {
+    const m = await import('mermaid');
+    mermaidModule = m.default;
+    mermaidModule.initialize({ startOnLoad: false, theme: 'default' });
+  }
+  return mermaidModule;
+}
+
+let rendererState = null;
+
+function getRendererState() {
+  if (!rendererState) {
+    rendererState = createMarkedRenderer();
+    marked.use({ renderer: rendererState.renderer });
+  }
+  return rendererState;
+}
 
 export function initLibraries() {
-  if (window.mermaid) {
-    mermaid.initialize({ startOnLoad: false, theme: 'default' });
-  }
-
   marked.setOptions({
-    highlight(code, lang) {
-      if (lang && hljs.getLanguage(lang)) {
-        try {
-          return hljs.highlight(code, { language: lang }).value;
-        } catch (e) {}
-      }
-
-      try {
-        return hljs.highlightAuto(code).value;
-      } catch (e) {}
-
-      return code;
-    },
     breaks: true,
     gfm: true
   });
 
-  if (!markedRenderer) {
-    markedRenderer = createMarkedRenderer();
-    marked.use({ renderer: markedRenderer });
-  }
+  getRendererState();
 }
 
 export function getRenderedContent(markdown) {
-  if (resetHeadingIds) {
-    resetHeadingIds();
-  }
+  const { resetHeadingIds } = getRendererState();
+  resetHeadingIds();
 
   const rawHtml = marked.parse(markdown);
   const sanitizedHtml = DOMPurify.sanitize(rawHtml, {
-    ADD_TAGS: ['button']
+    ADD_ATTR: ['data-action', 'data-delta', 'data-resize-mode', 'data-heading-level']
   });
 
   return {
@@ -50,6 +51,8 @@ export function getRenderedContent(markdown) {
 
 export function renderPreview({ refs, onAfterRender } = {}) {
   const markdown = refs.editor.value;
+  const scrollContainer = refs.preview.parentElement || refs.preview;
+  const prevScrollTop = scrollContainer.scrollTop;
 
   if (!markdown.trim()) {
     refs.preview.innerHTML = buildEmptyPreviewHtml();
@@ -60,7 +63,8 @@ export function renderPreview({ refs, onAfterRender } = {}) {
   try {
     const { sanitizedHtml } = getRenderedContent(markdown);
     refs.preview.innerHTML = sanitizedHtml;
-    runMermaid();
+    scrollContainer.scrollTop = prevScrollTop;
+    runMermaid(refs.preview);
     if (onAfterRender) onAfterRender({ isEmpty: false });
   } catch (e) {
     refs.preview.innerHTML = buildErrorHtml(e.message);
@@ -68,16 +72,18 @@ export function renderPreview({ refs, onAfterRender } = {}) {
   }
 }
 
-function runMermaid() {
-  if (!window.mermaid) return;
-
-  Promise.resolve().then(() => {
-    try {
-      mermaid.run({ querySelector: '.mermaid' });
-    } catch (err) {
-      console.error('Mermaid rendering failed', err);
+function runMermaid(root = document) {
+  loadMermaid().then(async (mermaid) => {
+    const nodes = root.querySelectorAll('.mermaid:not([data-mermaid-processed])');
+    for (const node of nodes) {
+      try {
+        node.setAttribute('data-mermaid-processed', 'true');
+        await mermaid.run({ nodes: [node] });
+      } catch (err) {
+        node.innerHTML = `<div class="mermaid-error"><span>Mermaid 语法错误</span><pre>${escapeHtml(err.message || String(err))}</pre></div>`;
+      }
     }
-  });
+  }).catch(() => {});
 }
 
 function buildEmptyPreviewHtml() {
@@ -103,10 +109,10 @@ function createMarkedRenderer() {
   function slugifyHeading(text) {
     const slug = text
       .toLowerCase()
-      .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
+      .replace(/[^\w一-龥]+/g, '-')
       .replace(/^-+|-+$/g, '');
 
-    return slug || 'heading';
+    return `heading-${slug || 'item'}`;
   }
 
   function getUniqueHeadingId(text) {
@@ -116,9 +122,9 @@ function createMarkedRenderer() {
     return count === 1 ? slug : `${slug}-${count}`;
   }
 
-  resetHeadingIds = function() {
+  function resetHeadingIds() {
     headingSlugCounts.clear();
-  };
+  }
 
   renderer.code = function(code, language) {
     let codeText;
@@ -141,12 +147,14 @@ function createMarkedRenderer() {
       try {
         highlighted = hljs.highlight(codeText, { language: lang }).value;
       } catch (e) {
+        console.warn(`highlight.js failed for language "${lang}":`, e);
         highlighted = escapeHtml(codeText);
       }
     } else {
       try {
         highlighted = hljs.highlightAuto(codeText).value;
       } catch (e) {
+        console.warn('highlight.js auto-detect failed:', e);
         highlighted = escapeHtml(codeText);
       }
     }
@@ -183,31 +191,10 @@ function createMarkedRenderer() {
       </pre>`;
   };
 
+  // marked renders each cell itself (via tablecell/parseInline) and passes the
+  // already-rendered header/body strings in. We only wrap the table so it can
+  // scroll horizontally on overflow.
   renderer.table = function(header, body) {
-    if (typeof header === 'object') {
-      const rows = header.rows || [];
-      const headerRow = header.header || [];
-
-      let headerHtml = '<tr>';
-      headerRow.forEach(cell => {
-        const align = cell.align ? ` style="text-align:${cell.align}"` : '';
-        headerHtml += `<th${align}>${cell.text}</th>`;
-      });
-      headerHtml += '</tr>';
-
-      let bodyHtml = '';
-      rows.forEach(row => {
-        bodyHtml += '<tr>';
-        row.forEach(cell => {
-          const align = cell.align ? ` style="text-align:${cell.align}"` : '';
-          bodyHtml += `<td${align}>${cell.text}</td>`;
-        });
-        bodyHtml += '</tr>';
-      });
-
-      return `<div style="overflow-x:auto"><table><thead>${headerHtml}</thead><tbody>${bodyHtml}</tbody></table></div>`;
-    }
-
     return `<div style="overflow-x:auto"><table><thead>${header}</thead><tbody>${body}</tbody></table></div>`;
   };
 
@@ -221,11 +208,14 @@ function createMarkedRenderer() {
     return `<h${depth} id="${id}" data-heading-level="${depth}">${headingText}</h${depth}>`;
   };
 
-  return renderer;
+  return { renderer, resetHeadingIds };
 }
 
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

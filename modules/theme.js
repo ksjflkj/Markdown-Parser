@@ -1,16 +1,39 @@
+import hljsDarkUrl from 'highlight.js/styles/atom-one-dark.css?url';
+import hljsLightUrl from 'highlight.js/styles/atom-one-light.css?url';
+
+function updateHljsTheme(isDark) {
+  const link = document.getElementById('hljsTheme');
+  if (link) {
+    link.href = isDark ? hljsDarkUrl : hljsLightUrl;
+  }
+}
+
 export function initTheme({ refs, state }) {
   const savedTheme = localStorage.getItem('md-parser-theme');
-  if (savedTheme === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-    state.isDark = false;
+
+  if (savedTheme) {
+    state.isDark = savedTheme !== 'light';
+  } else {
+    state.isDark = !window.matchMedia('(prefers-color-scheme: light)').matches;
   }
 
+  document.documentElement.setAttribute('data-theme', state.isDark ? 'dark' : 'light');
+  updateHljsTheme(state.isDark);
   updateThemeIcon({ refs, state });
 
   refs.btnTheme.addEventListener('click', () => {
     state.isDark = !state.isDark;
     document.documentElement.setAttribute('data-theme', state.isDark ? 'dark' : 'light');
     localStorage.setItem('md-parser-theme', state.isDark ? 'dark' : 'light');
+    updateHljsTheme(state.isDark);
+    updateThemeIcon({ refs, state });
+  });
+
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+    if (localStorage.getItem('md-parser-theme')) return;
+    state.isDark = e.matches;
+    document.documentElement.setAttribute('data-theme', state.isDark ? 'dark' : 'light');
+    updateHljsTheme(state.isDark);
     updateThemeIcon({ refs, state });
   });
 }

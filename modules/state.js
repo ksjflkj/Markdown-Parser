@@ -5,6 +5,7 @@ export function createState() {
     searchTimeout: null,
     searchProcessing: false,
     dragCounter: 0,
+    internalDrag: false,
     currentFileHandle: null,
     isDark: true,
     searchMarks: [],

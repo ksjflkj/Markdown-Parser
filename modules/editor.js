@@ -1,3 +1,5 @@
+import { createEditorView } from './editor-view.js';
+
 const DEFAULT_CONTENT = `# 🎉 欢迎使用 Markdown 解析器
 
 这是一个现代化的 **Markdown 在线解析器**，支持实时预览和多种功能。
@@ -72,6 +74,11 @@ hello_world()
 `;
 
 export function createEditorController({ refs, state, renderPreview }) {
+  // refs.editor starts as the mount <div>. We build a CM6 view inside it and
+  // swap refs.editor for a textarea-shaped adapter so the rest of the app keeps
+  // reading `.value` / `.selectionStart` / etc. without knowing about CM6.
+  const mount = refs.editor;
+
   function updateStats() {
     const text = refs.editor.value;
     refs.charCount.textContent = `${text.length} 字符`;
@@ -79,152 +86,69 @@ export function createEditorController({ refs, state, renderPreview }) {
   }
 
   function persistEditorContent() {
-    localStorage.setItem('md-parser-content', refs.editor.value);
-  }
-
-  function sanitizeHistory() {
-    state.history.stack = state.history.stack.filter(snapshot => typeof snapshot === 'string');
-    state.history.forwardStack = state.history.forwardStack.filter(snapshot => typeof snapshot === 'string');
-    if (typeof state.history.lastValue !== 'string') {
-      state.history.lastValue = refs.editor.value;
-    }
-  }
-
-  function resetHistory(value = refs.editor.value) {
-    state.history.stack = [];
-    state.history.forwardStack = [];
-    state.history.isUndoAction = false;
-    state.history.lastValue = value;
-  }
-
-  function pushHistory(snapshot = state.history.lastValue) {
-    sanitizeHistory();
-
-    // 防止撤销操作触发历史记录
-    if (state.history.isUndoAction) return;
-    if (typeof snapshot !== 'string') return;
-    if (snapshot === refs.editor.value) return;
-
-    const lastSnapshot = state.history.stack[state.history.stack.length - 1];
-    if (lastSnapshot === snapshot) return;
-
-    state.history.stack.push(snapshot);
-    state.history.forwardStack = []; // 清空重做栈
-
-    // 限制栈大小
-    if (state.history.stack.length > state.history.maxSize) {
-      state.history.stack.shift();
-    }
-  }
-
-  function undo() {
-    sanitizeHistory();
-    if (state.history.stack.length === 0) return;
-
-    state.history.isUndoAction = true;
-    state.history.forwardStack.push(refs.editor.value);
-
-    let prev;
-    while (state.history.stack.length > 0) {
-      const snapshot = state.history.stack.pop();
-      if (typeof snapshot === 'string') {
-        prev = snapshot;
-        break;
-      }
-    }
-
-    if (typeof prev !== 'string') {
-      state.history.isUndoAction = false;
-      return;
-    }
-
-    refs.editor.value = prev;
-    state.history.lastValue = refs.editor.value;
-    updateStats();
-    persistEditorContent();
-    renderPreview();
-
-    setTimeout(() => {
-      state.history.isUndoAction = false;
-    }, 0);
-  }
-
-  function redo() {
-    sanitizeHistory();
-    if (state.history.forwardStack.length === 0) return;
-
-    state.history.isUndoAction = true;
-    state.history.stack.push(refs.editor.value);
-
-    let next;
-    while (state.history.forwardStack.length > 0) {
-      const snapshot = state.history.forwardStack.pop();
-      if (typeof snapshot === 'string') {
-        next = snapshot;
-        break;
-      }
-    }
-
-    if (typeof next !== 'string') {
-      state.history.isUndoAction = false;
-      return;
-    }
-
-    refs.editor.value = next;
-    state.history.lastValue = refs.editor.value;
-    updateStats();
-    persistEditorContent();
-    renderPreview();
-
-    setTimeout(() => {
-      state.history.isUndoAction = false;
-    }, 0);
-  }
-
-  function canUndo() {
-    return state.history.stack.length > 0;
-  }
-
-  function canRedo() {
-    return state.history.forwardStack.length > 0;
+    try {
+      sessionStorage.setItem('md-parser-content', refs.editor.value);
+    } catch { /* quota exceeded — session storage full */ }
+    try {
+      localStorage.setItem('md-parser-content', refs.editor.value);
+    } catch { /* quota exceeded — localStorage full */ }
   }
 
   function queueRender() {
     persistEditorContent();
     updateStats();
-    state.history.lastValue = refs.editor.value;
     clearTimeout(state.renderTimeout);
     state.renderTimeout = setTimeout(renderPreview, 80);
   }
 
+  // Every document edit (typing, formatting, paste, undo/redo) flows through
+  // CM6's update listener into here — one place drives persist + render.
   function handleInput() {
-    pushHistory(state.history.lastValue);
     queueRender();
   }
 
-  function scheduleRender(previousValue = state.history.lastValue) {
-    pushHistory(previousValue);
+  const adapter = createEditorView({
+    parent: mount,
+    initialValue: '',
+    onDocChanged: handleInput
+  });
+  refs.editor = adapter;
+
+  // Formatting helpers mutate the doc via the adapter, which dispatches a CM6
+  // change and thus already triggers handleInput. scheduleRender stays as a
+  // no-op-ish safety net (and keeps the historical call sites intact).
+  function scheduleRender() {
     queueRender();
   }
 
   function setContent(content, { resetUndo = false } = {}) {
-    refs.editor.value = content;
     if (resetUndo) {
-      resetHistory(content);
+      refs.editor.resetDoc(content);
+    } else {
+      refs.editor.value = content;
     }
     queueRender();
   }
 
   function restoreInitialContent() {
-    const savedContent = localStorage.getItem('md-parser-content');
-    if (savedContent) {
-      refs.editor.value = savedContent;
-      resetHistory(savedContent);
+    // 优先从 sessionStorage 恢复（当前标签页独立内容，刷新后仍在）
+    const sessionContent = sessionStorage.getItem('md-parser-content');
+    if (sessionContent) {
+      refs.editor.resetDoc(sessionContent);
+      queueRender();
       return;
     }
 
-    refs.editor.value = DEFAULT_CONTENT;
-    resetHistory(DEFAULT_CONTENT);
+    // 兜底：新标签页首次打开时从 localStorage 恢复上次编辑内容
+    const savedContent = localStorage.getItem('md-parser-content');
+    if (savedContent) {
+      refs.editor.resetDoc(savedContent);
+      queueRender();
+      return;
+    }
+
+    refs.editor.resetDoc(DEFAULT_CONTENT);
+    queueRender();
   }
 
   function wrapSelection(before, after, placeholder = '') {
@@ -443,6 +367,18 @@ export function createEditorController({ refs, state, renderPreview }) {
     scheduleRender();
   }
 
+  function insertText(text) {
+    const start = refs.editor.selectionStart;
+    const end = refs.editor.selectionEnd;
+    const value = refs.editor.value;
+
+    refs.editor.value = value.substring(0, start) + text + value.substring(end);
+    const caret = start + text.length;
+    refs.editor.setSelectionRange(caret, caret);
+    refs.editor.focus();
+    scheduleRender();
+  }
+
   function insertHorizontalRule() {
     const start = refs.editor.selectionStart;
     const end = refs.editor.selectionEnd;
@@ -494,19 +430,26 @@ export function createEditorController({ refs, state, renderPreview }) {
     insertAtLineStart(prefix);
   }
 
+  function undo() {
+    refs.editor.undo();
+  }
+
+  function redo() {
+    refs.editor.redo();
+  }
+
   return {
     updateStats,
     persistEditorContent,
     handleInput,
     scheduleRender,
     setContent,
+    insertText,
     restoreInitialContent,
     formatText,
     formatHeading,
     formatTaskList,
     undo,
-    redo,
-    canUndo,
-    canRedo
+    redo
   };
 }

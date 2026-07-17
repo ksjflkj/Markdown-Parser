@@ -128,9 +128,27 @@ export function createTocController({ refs, state }) {
   }
 
   function updateActiveTocItem(activeId) {
+    let activeLink = null;
     refs.tocNav.querySelectorAll('.toc-item').forEach(link => {
-      link.classList.toggle('active', !!activeId && link.dataset.id === activeId);
+      const isActive = !!activeId && link.dataset.id === activeId;
+      link.classList.toggle('active', isActive);
+      if (isActive) activeLink = link;
     });
+
+    // 将活跃目录项滚动到可视区域
+    if (activeLink) {
+      const nav = refs.tocNav;
+      const navRect = nav.getBoundingClientRect();
+      const linkRect = activeLink.getBoundingClientRect();
+
+      if (linkRect.top < navRect.top) {
+        // 目录项在可视区上方，向上滚动
+        nav.scrollTop += linkRect.top - navRect.top - 8;
+      } else if (linkRect.bottom > navRect.bottom) {
+        // 目录项在可视区下方，向下滚动
+        nav.scrollTop += linkRect.bottom - navRect.bottom + 8;
+      }
+    }
   }
 
   function update() {
@@ -147,9 +165,46 @@ export function createTocController({ refs, state }) {
     scrollRoot.removeEventListener('scroll', handlePreviewScroll);
   }
 
+  function handleResizeMousedown(e) {
+    state.tocResize.active = true;
+    state.tocResize.containerRect = refs.mainContainer.getBoundingClientRect();
+    state.tocResize.pendingClientX = e.clientX;
+    refs.mainContainer.classList.add('is-resizing');
+    refs.tocResizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  }
+
+  function handleResizeMouseMove(e) {
+    if (!state.tocResize.active) return;
+
+    const containerRect = state.tocResize.containerRect || refs.mainContainer.getBoundingClientRect();
+    const tocWidth = e.clientX - containerRect.left;
+
+    if (tocWidth >= 150 && tocWidth <= 400) {
+      refs.tocPanel.style.width = `${tocWidth}px`;
+    }
+  }
+
+  function handleResizeMouseUp() {
+    if (!state.tocResize.active) return;
+
+    state.tocResize.active = false;
+    state.tocResize.containerRect = null;
+    state.tocResize.pendingClientX = 0;
+    refs.mainContainer.classList.remove('is-resizing');
+    refs.tocResizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
+
   return {
     update,
     destroy,
-    scrollToHeading
+    scrollToHeading,
+    handleResizeMousedown,
+    handleResizeMouseMove,
+    handleResizeMouseUp
   };
 }
