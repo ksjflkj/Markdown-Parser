@@ -10,6 +10,7 @@ import { createCodeBlockController } from './modules/codeblock.js';
 import { createPaneResizeController } from './modules/pane-resize.js';
 import { createShortcutsController } from './modules/shortcuts.js';
 import { createImageController } from './modules/images.js';
+import { createRecentFilesController } from './modules/recent-files.js';
 
 // ==========================================
 // App Initialization
@@ -41,6 +42,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const paneResizeController = createPaneResizeController({ refs, state });
   const shortcutsController = createShortcutsController({
     refs, editorController, fileController, searchController
+  });
+  const recentFilesController = createRecentFilesController({
+    refs, fileController, showToast
   });
 
   initColorTheme({ refs, showToast });
@@ -88,6 +92,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (refs.btnOpen) {
       refs.btnOpen.addEventListener('click', fileController.openFile);
+    }
+
+    if (refs.btnRecent) {
+      refs.btnRecent.addEventListener('click', recentFilesController.openModal);
+    }
+
+    if (refs.recentModalClose) {
+      refs.recentModalClose.addEventListener('click', recentFilesController.closeModal);
+    }
+
+    if (refs.recentModal) {
+      refs.recentModal.addEventListener('click', (e) => {
+        if (e.target === refs.recentModal) recentFilesController.closeModal();
+      });
+    }
+
+    if (refs.recentClear) {
+      refs.recentClear.addEventListener('click', recentFilesController.handleClear);
     }
 
     // Format toolbar

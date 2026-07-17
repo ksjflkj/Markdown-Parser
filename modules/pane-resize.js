@@ -3,11 +3,26 @@ export function createPaneResizeController({ refs, state }) {
     return window.innerWidth <= 768 ? 'y' : 'x';
   }
 
+  // 拖动基准是「编辑器 + 预览」这块区域（编辑器左/上缘到预览右/下缘），
+  // 不含目录面板和 resizer 的固定宽度，否则目录出现时分割条会跳动。
+  function measureRegion(axis) {
+    const editorRect = refs.editorPanel.getBoundingClientRect();
+    const previewRect = refs.previewPanel.getBoundingClientRect();
+
+    if (axis === 'y') {
+      state.paneResize.regionStart = editorRect.top;
+      state.paneResize.regionSize = previewRect.bottom - editorRect.top;
+    } else {
+      state.paneResize.regionStart = editorRect.left;
+      state.paneResize.regionSize = previewRect.right - editorRect.left;
+    }
+  }
+
   function handleMousedown(e) {
     const axis = getAxis();
     state.paneResize.active = true;
     state.paneResize.axis = axis;
-    state.paneResize.containerRect = refs.mainContainer.getBoundingClientRect();
+    measureRegion(axis);
     state.paneResize.pendingClientX = e.clientX;
     state.paneResize.pendingClientY = e.clientY;
     refs.mainContainer.classList.add('is-resizing');
@@ -21,26 +36,17 @@ export function createPaneResizeController({ refs, state }) {
     if (!state.paneResize.active) return;
 
     const axis = state.paneResize.axis || getAxis();
-    const containerRect = state.paneResize.containerRect || refs.mainContainer.getBoundingClientRect();
+    const { regionStart, regionSize } = state.paneResize;
+    if (!regionSize) return;
 
-    if (axis === 'y') {
-      const offsetY = e.clientY - containerRect.top;
-      const percentage = (offsetY / containerRect.height) * 100;
+    const pointer = axis === 'y' ? e.clientY : e.clientX;
+    // ratio = 编辑器占该区域的比例（0~1）。用 flex-grow 比例而非固定百分比，
+    // 使目录/resizer 等固定宽度自动排除，窗口缩放时比例也自适应。
+    const ratio = (pointer - regionStart) / regionSize;
 
-      if (percentage > 20 && percentage < 80) {
-        refs.editorPanel.style.flex = `0 0 ${percentage}%`;
-        refs.previewPanel.style.flex = `0 0 ${100 - percentage}%`;
-      }
-
-      return;
-    }
-
-    const offsetX = e.clientX - containerRect.left;
-    const percentage = (offsetX / containerRect.width) * 100;
-
-    if (percentage > 20 && percentage < 80) {
-      refs.editorPanel.style.flex = `0 0 ${percentage}%`;
-      refs.previewPanel.style.flex = `0 0 ${100 - percentage}%`;
+    if (ratio > 0.2 && ratio < 0.8) {
+      refs.editorPanel.style.flex = `${ratio} 1 0`;
+      refs.previewPanel.style.flex = `${1 - ratio} 1 0`;
     }
   }
 
@@ -76,7 +82,8 @@ export function createPaneResizeController({ refs, state }) {
 
     state.paneResize.active = false;
     state.paneResize.axis = getAxis();
-    state.paneResize.containerRect = null;
+    state.paneResize.regionStart = 0;
+    state.paneResize.regionSize = 0;
     state.paneResize.pendingClientX = 0;
     state.paneResize.pendingClientY = 0;
     state.paneResize.frameId = null;

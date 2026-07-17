@@ -1,40 +1,15 @@
+import { HANDLE_STORE, withStore } from './db.js';
+import { recordRecentFile, touchRecentFile } from './recent-files.js';
+
 // File System Access API 的句柄无法存入 localStorage，但可结构化克隆到 IndexedDB，
 // 这样刷新页面后仍能定位到上次打开的文件并重新读取磁盘上的最新内容。
-const HANDLE_DB_NAME = 'md-parser';
-const HANDLE_DB_VERSION = 1;
-const HANDLE_STORE = 'file-handles';
 const HANDLE_KEY = 'current';
 const LAST_SYNC_KEY = 'md-parser-last-sync-time';
-
-function openHandleDb() {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') {
-      reject(new Error('IndexedDB unavailable'));
-      return;
-    }
-    const request = indexedDB.open(HANDLE_DB_NAME, HANDLE_DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(HANDLE_STORE)) {
-        db.createObjectStore(HANDLE_STORE);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
 
 async function persistFileHandle(handle) {
   if (!handle) return;
   try {
-    const db = await openHandleDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(HANDLE_STORE, 'readwrite');
-      tx.objectStore(HANDLE_STORE).put(handle, HANDLE_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
+    await withStore(HANDLE_STORE, 'readwrite', (store) => store.put(handle, HANDLE_KEY));
   } catch (err) {
     console.warn('Failed to persist file handle:', err);
   }
@@ -42,14 +17,13 @@ async function persistFileHandle(handle) {
 
 async function getPersistedFileHandle() {
   try {
-    const db = await openHandleDb();
-    const handle = await new Promise((resolve, reject) => {
-      const tx = db.transaction(HANDLE_STORE, 'readonly');
-      const req = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-    db.close();
+    const handle = await withStore(HANDLE_STORE, 'readonly', (store) =>
+      new Promise((resolve, reject) => {
+        const req = store.get(HANDLE_KEY);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      })
+    );
     return handle || null;
   } catch (err) {
     console.warn('Failed to read persisted file handle:', err);
@@ -59,14 +33,7 @@ async function getPersistedFileHandle() {
 
 async function clearPersistedFileHandle() {
   try {
-    const db = await openHandleDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(HANDLE_STORE, 'readwrite');
-      tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
+    await withStore(HANDLE_STORE, 'readwrite', (store) => store.delete(HANDLE_KEY));
   } catch (err) {
     console.warn('Failed to clear persisted file handle:', err);
   }
@@ -131,9 +98,12 @@ export function createFileController({ refs, state, editorController, imageContr
         });
         state.currentFileHandle = handle;
         const file = await handle.getFile();
-        editorController.setContent(await file.text(), { resetUndo: true });
+        const text = await file.text();
+        editorController.setContent(text, { resetUndo: true });
         setLastSyncTime(file.lastModified);
         persistFileHandle(handle);
+        recordRecentFile({ name: file.name, handle, content: text });
+        localStorage.setItem('md-parser-last-file-name', file.name);
         showToast(`已打开: ${file.name}`);
         return;
       }
@@ -157,9 +127,11 @@ export function createFileController({ refs, state, editorController, imageContr
       const file = e.target.files[0];
       if (!file) return;
       state.currentFileHandle = null;
-      editorController.setContent(await file.text(), { resetUndo: true });
+      const text = await file.text();
+      editorController.setContent(text, { resetUndo: true });
       setLastSyncTime(file.lastModified);
       clearPersistedFileHandle();
+      recordRecentFile({ name: file.name, handle: null, content: text });
       localStorage.setItem('md-parser-last-file-name', file.name);
       showToast(`已打开: ${file.name}`);
     };
@@ -228,6 +200,7 @@ export function createFileController({ refs, state, editorController, imageContr
 
         state.currentFileHandle = handle;
         await writeToHandle(handle);
+        recordRecentFile({ name: handle.name, handle, content: refs.editor.value });
         localStorage.setItem('md-parser-last-file-name', handle.name);
         showToast('文档已保存');
       } catch (err) {
@@ -315,9 +288,11 @@ export function createFileController({ refs, state, editorController, imageContr
             if (handle && handle.kind === 'file') {
               state.currentFileHandle = handle;
               const file = await handle.getFile();
-              editorController.setContent(await file.text(), { resetUndo: true });
+              const text = await file.text();
+              editorController.setContent(text, { resetUndo: true });
               setLastSyncTime(file.lastModified);
               persistFileHandle(handle);
+              recordRecentFile({ name: file.name, handle, content: text });
               localStorage.setItem('md-parser-last-file-name', file.name);
               showToast(`已加载文件: ${file.name}`);
               hasHandledDrop = true;
@@ -336,9 +311,11 @@ export function createFileController({ refs, state, editorController, imageContr
         const reader = new FileReader();
         reader.onload = (evt) => {
           state.currentFileHandle = null;
-          editorController.setContent(evt.target.result, { resetUndo: true });
+          const text = evt.target.result;
+          editorController.setContent(text, { resetUndo: true });
           setLastSyncTime(file.lastModified);
           clearPersistedFileHandle();
+          recordRecentFile({ name: file.name, handle: null, content: text });
           localStorage.setItem('md-parser-last-file-name', file.name);
           showToast(`已加载文件: ${file.name}`);
         };
@@ -397,6 +374,54 @@ ${bodyHtml}
     URL.revokeObjectURL(url);
   }
 
+  // 从「最近文件」列表打开一条记录。优先用句柄读磁盘最新内容，
+  // 句柄失效/无权限/不存在时降级到保存的文本副本，保证记录始终可打开。
+  async function openRecentEntry(entry) {
+    if (!entry || !entry.name) return;
+
+    // 有句柄时尝试读磁盘：请求读权限 → 读取最新内容并接管为当前文件。
+    if (entry.handle && entry.handle.getFile) {
+      try {
+        let granted =
+          entry.handle.queryPermission &&
+          (await entry.handle.queryPermission({ mode: 'read' })) === 'granted';
+        if (!granted && entry.handle.requestPermission) {
+          granted = (await entry.handle.requestPermission({ mode: 'read' })) === 'granted';
+        }
+        if (granted) {
+          const file = await entry.handle.getFile();
+          const text = await file.text();
+          state.currentFileHandle = entry.handle;
+          editorController.setContent(text, { resetUndo: true });
+          setLastSyncTime(file.lastModified);
+          persistFileHandle(entry.handle);
+          // 用磁盘最新内容刷新副本与打开时间。
+          recordRecentFile({ name: file.name, handle: entry.handle, content: text });
+          localStorage.setItem('md-parser-last-file-name', file.name);
+          showToast(`已打开: ${file.name}`);
+          return;
+        }
+      } catch (err) {
+        // 文件被移动/删除或权限被拒，落到下面的文本副本。
+        console.warn('Failed to open recent file from disk, using saved copy:', err);
+      }
+    }
+
+    // 降级：使用保存的文本副本。此时无可写句柄，保存会走「另存为」。
+    if (typeof entry.content === 'string') {
+      state.currentFileHandle = null;
+      clearPersistedFileHandle();
+      editorController.setContent(entry.content, { resetUndo: true });
+      setLastSyncTime(Date.now());
+      localStorage.setItem('md-parser-last-file-name', entry.name);
+      touchRecentFile(entry.name);
+      showToast(`已从副本打开: ${entry.name}`);
+      return;
+    }
+
+    showToast(`无法打开: ${entry.name}`);
+  }
+
   // 刷新页面时尝试从磁盘重新读取上次打开的文件。
   // 仅当磁盘文件的 mtime 比上次同步时间更新时才覆盖编辑器内容，
   // 这样外部修改（VSCode 等保存）会自动同步，而应用内未保存的编辑不会被覆盖。
@@ -405,18 +430,11 @@ ${bodyHtml}
     if (!handle) return false;
 
     try {
-      let granted = handle.queryPermission && (await handle.queryPermission({ mode: 'read' })) === 'granted';
-      if (!granted && handle.requestPermission) {
-        // 刷新时通常无用户手势，requestPermission 可能被拒绝；尝试一次，失败则回退。
-        try {
-          const result = await handle.requestPermission({ mode: 'read' });
-          granted = result === 'granted';
-        } catch {
-          granted = false;
-        }
-      }
+      // 刷新时不主动 requestPermission（会弹「允许查看和复制」权限框打扰用户），
+      // 只读取已授予的权限。未授权则保留句柄供后续用户手势使用，静默回退到本地存储恢复。
+      const granted = handle.queryPermission && (await handle.queryPermission({ mode: 'read' })) === 'granted';
       if (!granted) {
-        // 权限不可用，仍恢复句柄以便保存时使用，但不覆盖编辑器内容。
+        // 权限不可用，仍恢复句柄以便用户之后手动操作时使用，但不覆盖编辑器内容。
         state.currentFileHandle = handle;
         return false;
       }
@@ -453,6 +471,7 @@ ${bodyHtml}
     exportMarkdownFile,
     trySaveFile,
     bindDragAndDropEvents,
+    openRecentEntry,
     syncFromDiskIfAvailable
   };
 }

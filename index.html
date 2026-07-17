@@ -64,6 +64,10 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 4.5V14a2 2 0 01-2 2H4a2 2 0 01-2-2V2a2 2 0 012-2h5.5L14 4.5zM10 4a1 1 0 001 1h2.5L10 1.5V4zM2 7h12M2 10h12"/></svg>
         <span>打开</span>
       </button>
+      <button class="action-btn" id="btnRecent" title="最近打开的文件">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+        <span>最近</span>
+      </button>
       <button class="action-btn" id="btnSave" title="保存文件 (Ctrl+S)">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 14V4.5L9.5 0H4a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2zM14 14H2M7 10h2M7 14h2M10 4V2H4v2"/></svg>
         <span>保存</span>
@@ -249,6 +253,20 @@
             <span class="export-desc">下载原始 Markdown 文件</span>
           </div>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Files Modal -->
+  <div class="modal-overlay" id="recentModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>最近打开的文件</h3>
+        <button class="modal-close" id="recentModalClose" type="button" aria-label="关闭最近文件弹窗">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="recent-list" id="recentList"></div>
+        <button class="recent-clear-btn" id="recentClear" type="button">清空列表</button>
       </div>
     </div>
   </div>

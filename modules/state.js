@@ -13,7 +13,10 @@ export function createState() {
     paneResize: {
       active: false,
       axis: 'x',
-      containerRect: null,
+      // 拖动基准是「编辑器 + 预览」这块区域，不含目录面板和 resizer，
+      // 这样目录出现时分割条不会跳动。
+      regionStart: 0,
+      regionSize: 0,
       pendingClientX: 0,
       pendingClientY: 0,
       frameId: null
